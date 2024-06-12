@@ -1,0 +1,369 @@
+CREATE DATABASE database1;
+USE database1;
+
+CREATE TABLE details (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100),
+    email VARCHAR(100),
+    dob DATE,
+    phone_number VARCHAR(15),
+    blood_group VARCHAR(3)
+);
+
+
+python -m venv venv
+source venv/bin/activate  # On Windows use `venv\Scripts\activate`
+
+pip install Flask mysql-connector-python Flask-Cors
+
+index.html
+----------
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Details CRUD Operations</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        form {
+            margin-bottom: 20px;
+        }
+        input, button {
+            margin: 5px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        table, th, td {
+            border: 1px solid black;
+        }
+        th, td {
+            padding: 10px;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+    <h1>DETAILS PAGE</h1>
+    <form id="detailsForm">
+        <input type="hidden" id="originalEmail" name="originalEmail">
+        <input type="text" id="name" name="name" placeholder="Name" required>
+        <input type="email" id="email" name="email" placeholder="Email" required>
+        <input type="date" id="dob" name="dob" required>
+        <input type="text" id="phone_number" name="phone_number" placeholder="Phone Number" required>
+        <input type="text" id="blood_group" name="blood_group" placeholder="Blood Group" required>
+        <button type="submit" id="submitButton">Add Detail</button>
+    </form>
+    <table id="detailsTable">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Date of Birth</th>
+                <th>Phone Number</th>
+                <th>Blood Group</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        </tbody>
+    </table>
+    <script src="app.js"></script>
+</body>
+</html>
+
+
+app.py
+------
+
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import mysql.connector
+
+app = Flask(__name__)
+CORS(app)
+
+def get_db_connection():
+    connection = mysql.connector.connect(
+        host='localhost',
+        user='root',
+        password='ARIA007aria',
+        database='database1'
+    )
+    return connection
+
+@app.route('/details', methods=['GET'])
+def get_details():
+    connection = get_db_connection()
+    cursor = connection.cursor(dictionary=True)
+    cursor.execute('SELECT * FROM details')
+    details = cursor.fetchall()
+    cursor.close()
+    connection.close()
+    return jsonify({'details': details})
+
+@app.route('/add', methods=['POST'])
+def add_detail():
+    name = request.form['name']
+    email = request.form['email']
+    dob = request.form['dob']
+    phone_number = request.form['phone_number']
+    blood_group = request.form['blood_group']
+
+    connection = get_db_connection()
+    cursor = connection.cursor()
+    cursor.execute(
+        'INSERT INTO details (name, email, dob, phone_number, blood_group) VALUES (%s, %s, %s, %s, %s)',
+        (name, email, dob, phone_number, blood_group)
+    )
+    connection.commit()
+    cursor.close()
+    connection.close()
+
+    return jsonify({'success': True, 'detail': {'id': cursor.lastrowid, 'name': name, 'email': email, 'dob': dob, 'phone_number': phone_number, 'blood_group': blood_group}})
+
+@app.route('/update', methods=['PUT'])
+def update_detail():
+    data = request.json
+    name = data['name']
+    email = data['email']
+    dob = data['dob']
+    phone_number = data['phone_number']
+    blood_group = data['blood_group']
+
+    connection = get_db_connection()
+    cursor = connection.cursor()
+    cursor.execute(
+        'UPDATE details SET name=%s, dob=%s, phone_number=%s, blood_group=%s WHERE email=%s',
+        (name, dob, phone_number, blood_group, email)
+    )
+    connection.commit()
+    cursor.close()
+    connection.close()
+
+    return jsonify({'success': True, 'detail': {'name': name, 'email': email, 'dob': dob, 'phone_number': phone_number, 'blood_group': blood_group}})
+
+@app.route('/delete', methods=['DELETE'])
+def delete_detail():
+    email = request.args.get('email')
+
+    if not email:
+        return jsonify({'success': False, 'message': 'Email parameter is missing.'}), 400
+
+    connection = get_db_connection()
+    cursor = connection.cursor()
+    cursor.execute('DELETE FROM details WHERE email = %s', (email,))
+    connection.commit()
+    cursor.close()
+    connection.close()
+
+    return jsonify({'success': True})
+
+if __name__ == '__main__':
+    app.run(debug=True)
+
+
+app.js
+------
+
+document.addEventListener('DOMContentLoaded', () => {
+    const form = document.getElementById('detailsForm');
+    const table = document.getElementById('detailsTable').getElementsByTagName('tbody')[0];
+    const submitButton = document.getElementById('submitButton');
+    let isEditing = false;
+
+    // Fetch existing details on page load
+    fetchDetails();
+
+    form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        const formData = new FormData(form);
+        const detail = {
+            name: formData.get('name'),
+            email: formData.get('email'),
+            dob: formData.get('dob'),
+            phone_number: formData.get('phone_number'),
+            blood_group: formData.get('blood_group')
+        };
+
+        if (isEditing) {
+            updateDetail(detail);
+        } else {
+            addDetail(detail);
+        }
+    });
+
+    function fetchDetails() {
+        fetch('http://localhost:5000/details')
+        .then(response => response.json())
+        .then(data => {
+            data.details.forEach(detail => addRowToTable(detail));
+        });
+    }
+
+    function addDetail(detail) {
+        fetch('http://localhost:5000/add', {
+            method: 'POST',
+            body: new URLSearchParams(detail)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                addRowToTable(data.detail);
+                form.reset();
+            } else {
+                alert(data.message);
+            }
+        });
+    }
+
+    function updateDetail(detail) {
+        detail.originalEmail = document.getElementById('originalEmail').value;
+
+        fetch('http://localhost:5000/update', {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(detail)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const rows = table.rows;
+                for (let i = 0; i < rows.length; i++) {
+                    if (rows[i].cells[1].innerText === detail.originalEmail) {
+                        rows[i].cells[0].innerText = detail.name;
+                        rows[i].cells[1].innerText = detail.email;
+                        rows[i].cells[2].innerText = detail.dob;
+                        rows[i].cells[3].innerText = detail.phone_number;
+                        rows[i].cells[4].innerText = detail.blood_group;
+                        break;
+                    }
+                }
+                form.reset();
+                submitButton.innerText = 'Add Detail';
+                isEditing = false;
+            } else {
+                alert(data.message);
+            }
+        });
+    }
+
+    function addRowToTable(detail) {
+        const row = table.insertRow();
+        row.insertCell(0).innerText = detail.name;
+        row.insertCell(1).innerText = detail.email;
+        row.insertCell(2).innerText = detail.dob;
+        row.insertCell(3).innerText = detail.phone_number;
+        row.insertCell(4).innerText = detail.blood_group;
+        const actionsCell = row.insertCell(5);
+        actionsCell.innerHTML = `
+            <button onclick="editDetail(this)">Edit</button>
+            <button onclick="deleteDetail(this)">Delete</button>`;
+    }
+
+    window.editDetail = function(button) {
+        const row = button.parentElement.parentElement;
+        document.getElementById('name').value = row.cells[0].innerText;
+        document.getElementById('email').value = row.cells[1].innerText;
+        document.getElementById('dob').value = row.cells[2].innerText;
+        document.getElementById('phone_number').value = row.cells[3].innerText;
+        document.getElementById('blood_group').value = row.cells[4].innerText;
+        document.getElementById('originalEmail').value = row.cells[1].innerText;
+        submitButton.innerText = 'Update Detail';
+        isEditing = true;
+    };
+
+    window.deleteDetail = function(button) {
+        const row = button.parentElement.parentElement;
+        const email = row.cells[1].innerText;
+
+        fetch(`http://localhost:5000/delete?email=${email}`, {
+            method: 'DELETE'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                row.remove();
+            } else {
+                alert(data.message);
+            }
+        });
+    };
+});
+
+
+
+styles.css
+----------
+
+body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+}
+
+h1 {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+form {
+    margin-bottom: 20px;
+}
+
+input[type="text"],
+input[type="email"],
+input[type="date"],
+button {
+    padding: 8px;
+    margin: 5px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+button {
+    background-color: #4CAF50;
+    color: white;
+    cursor: pointer;
+}
+
+button:hover {
+    background-color: #45a049;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+th, td {
+    padding: 10px;
+    border: 1px solid #ddd;
+    text-align: left;
+}
+
+th {
+    background-color: #4CAF50;
+    color: white;
+}
+
+tr:nth-child(even) {
+    background-color: #f2f2f2;
+}
+
+tr:hover {
+    background-color: #ddd;
+}
+
+.delete-button {
+    background-color: #f44336;
+}
